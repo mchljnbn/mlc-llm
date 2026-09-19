@@ -11,7 +11,6 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Surface
@@ -31,6 +30,7 @@ class MainActivity : ComponentActivity() {
     ) { uri: Uri? ->
         uri?.let {
             Log.v("pickImageLauncher", "Selected image uri: $it")
+            if (!this::chatState.isInitialized) return@let
             chatState.messages.add(
                 MessageData(
                     role = MessageRole.User,
@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity() {
     ) { success: Boolean ->
         if (success && cameraImageUri != null) {
             Log.v("takePictureLauncher", "Camera image uri: $cameraImageUri")
+            if (!this::chatState.isInitialized) return@registerForActivityResult
             chatState.messages.add(
                 MessageData(
                     role = MessageRole.User,
@@ -68,7 +69,6 @@ class MainActivity : ComponentActivity() {
 
     lateinit var chatState: AppViewModel.ChatState
 
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     @ExperimentalMaterial3Api
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -77,9 +77,7 @@ class MainActivity : ComponentActivity() {
         requestNeededPermissions()
 
         setContent {
-            Surface(
-                modifier = Modifier.fillMaxSize()
-            ) {
+            Surface(modifier = Modifier.fillMaxSize()) {
                 MLCChatTheme {
                     NavView(this)
                 }
@@ -90,42 +88,33 @@ class MainActivity : ComponentActivity() {
     private fun requestNeededPermissions() {
         val permissionsToRequest = mutableListOf<String>()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.READ_MEDIA_IMAGES
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                permissionsToRequest.add(Manifest.permission.READ_MEDIA_IMAGES)
-            }
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.CAMERA
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                permissionsToRequest.add(Manifest.permission.CAMERA)
-            }
-        } else {
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.READ_EXTERNAL_STORAGE
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
+        val needsReadImagesPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED
+        if (needsReadImagesPermission) {
+            permissionsToRequest.add(Manifest.permission.READ_MEDIA_IMAGES)
+        }
+
+        val needsCameraPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
+        if (needsCameraPermission) {
+            permissionsToRequest.add(Manifest.permission.CAMERA)
+        }
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            val needsLegacyReadStorage = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_EXTERNAL_STORAGE
+            ) != PackageManager.PERMISSION_GRANTED
+            if (needsLegacyReadStorage) {
                 permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
             }
-            if (ContextCompat.checkSelfPermission(
+
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+                ContextCompat.checkSelfPermission(
                     this,
                     Manifest.permission.WRITE_EXTERNAL_STORAGE
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
                 permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            }
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.CAMERA
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                permissionsToRequest.add(Manifest.permission.CAMERA)
             }
         }
 
@@ -135,10 +124,27 @@ class MainActivity : ComponentActivity() {
     }
 
     fun pickImageFromGallery() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestNeededPermissions()
+            return
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestNeededPermissions()
+            return
+        }
         pickImageLauncher.launch("image/*")
     }
 
     fun takePhoto() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            requestNeededPermissions()
+            return
+        }
+
         val contentValues = ContentValues().apply {
             val timeFormatter = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
             val fileName = "IMG_${timeFormatter.format(Date())}.jpg"
@@ -151,6 +157,11 @@ class MainActivity : ComponentActivity() {
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
             contentValues
         )
+
+        if (cameraImageUri == null) {
+            Log.e("takePhoto", "Could not create image output Uri")
+            return
+        }
 
         takePictureLauncher.launch(cameraImageUri)
     }

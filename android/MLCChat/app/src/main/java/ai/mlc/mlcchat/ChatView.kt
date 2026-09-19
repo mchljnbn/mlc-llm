@@ -66,51 +66,54 @@ fun ChatView(
 ) {
     val localFocusManager = LocalFocusManager.current
     (activity as MainActivity).chatState = chatState
-    Scaffold(topBar = {
-        TopAppBar(
-            title = {
-                Text(
-                    text = "MLCChat: " + chatState.modelName.value.split("-")[0],
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
-            },
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary),
-            navigationIcon = {
-                IconButton(
-                    onClick = { navController.popBackStack() },
-                    enabled = chatState.interruptable()
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.ArrowBack,
-                        contentDescription = "back home page",
-                        tint = MaterialTheme.colorScheme.onPrimary
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "MLCChat: " + chatState.modelName.value.split("-")[0],
+                        color = MaterialTheme.colorScheme.onPrimary
                     )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary),
+                navigationIcon = {
+                    IconButton(
+                        onClick = { navController.popBackStack() },
+                        enabled = chatState.interruptable()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.ArrowBack,
+                            contentDescription = "back home page",
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            chatState.requestResetChat(); activity.hasImage = false
+                        },
+                        enabled = chatState.interruptable()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Replay,
+                            contentDescription = "reset the chat",
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
                 }
-            },
-            actions = {
-                IconButton(
-                    onClick = {
-                        chatState.requestResetChat()
-                        activity.hasImage = false },
-                    enabled = chatState.interruptable()
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Replay,
-                        contentDescription = "reset the chat",
-                        tint = MaterialTheme.colorScheme.onPrimary
-                    )
-                }
-            })
-    }, modifier = Modifier.pointerInput(Unit) {
-        detectTapGestures(onTap = {
-            localFocusManager.clearFocus()
-        })
-    }) { paddingValues ->
+            )
+        },
+        modifier = Modifier.pointerInput(Unit) {
+            detectTapGestures(onTap = { localFocusManager.clearFocus() })
+        }
+    ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 10.dp)
+                .padding(horizontal = 14.dp)
         ) {
             val lazyColumnListState = rememberLazyListState()
             val coroutineScope = rememberCoroutineScope()
@@ -120,16 +123,18 @@ fun ChatView(
                 modifier = Modifier
                     .fillMaxWidth()
                     .wrapContentHeight()
-                    .padding(top = 5.dp)
+                    .padding(top = 8.dp)
             )
-            Divider(thickness = 1.dp, modifier = Modifier.padding(vertical = 5.dp))
+            Divider(thickness = 1.dp, modifier = Modifier.padding(vertical = 6.dp))
             LazyColumn(
                 modifier = Modifier.weight(9f),
-                verticalArrangement = Arrangement.spacedBy(5.dp, alignment = Alignment.Bottom),
+                verticalArrangement = Arrangement.spacedBy(8.dp, alignment = Alignment.Bottom),
                 state = lazyColumnListState
             ) {
                 coroutineScope.launch {
-                    lazyColumnListState.animateScrollToItem(chatState.messages.size)
+                    if (chatState.messages.isNotEmpty()) {
+                        lazyColumnListState.animateScrollToItem(chatState.messages.size)
+                    }
                 }
                 items(
                     items = chatState.messages,
@@ -137,11 +142,9 @@ fun ChatView(
                 ) { message ->
                     MessageView(messageData = message, activity)
                 }
-                item {
-                    // place holder item for scrolling to the bottom
-                }
+                item { }
             }
-            Divider(thickness = 1.dp, modifier = Modifier.padding(top = 5.dp))
+            Divider(thickness = 1.dp, modifier = Modifier.padding(top = 6.dp))
             SendMessageView(chatState = chatState, activity)
         }
     }
@@ -149,16 +152,13 @@ fun ChatView(
 
 @Composable
 fun MessageView(messageData: MessageData, activity: Activity?) {
-    // default render the Assistant text as MarkdownText
     var useMarkdown by remember { mutableStateOf(true) }
-    var localActivity : MainActivity = activity as MainActivity
+    val localActivity: MainActivity = activity as? MainActivity ?: return
     SelectionContainer {
         if (messageData.role == MessageRole.Assistant) {
             Column {
                 if (messageData.text.isNotEmpty()) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = "Show as Markdown",
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -167,16 +167,10 @@ fun MessageView(messageData: MessageData, activity: Activity?) {
                                 .padding(end = 8.dp)
                                 .widthIn(max = 300.dp)
                         )
-                        Switch(
-                            checked = useMarkdown,
-                            onCheckedChange = { useMarkdown = it }
-                        )
+                        Switch(checked = useMarkdown, onCheckedChange = { useMarkdown = it })
                     }
                 }
-                Row(
-                    horizontalArrangement = Arrangement.Start,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                Row(horizontalArrangement = Arrangement.Start, modifier = Modifier.fillMaxWidth()) {
                     if (useMarkdown) {
                         MarkdownText(
                             isTextSelectable = true,
@@ -184,9 +178,9 @@ fun MessageView(messageData: MessageData, activity: Activity?) {
                                 .wrapContentWidth()
                                 .background(
                                     color = MaterialTheme.colorScheme.secondaryContainer,
-                                    shape = RoundedCornerShape(5.dp)
+                                    shape = RoundedCornerShape(18.dp)
                                 )
-                                .padding(5.dp)
+                                .padding(10.dp)
                                 .widthIn(max = 300.dp),
                             markdown = messageData.text,
                         )
@@ -199,19 +193,16 @@ fun MessageView(messageData: MessageData, activity: Activity?) {
                                 .wrapContentWidth()
                                 .background(
                                     color = MaterialTheme.colorScheme.secondaryContainer,
-                                    shape = RoundedCornerShape(5.dp)
+                                    shape = RoundedCornerShape(18.dp)
                                 )
-                                .padding(5.dp)
+                                .padding(10.dp)
                                 .widthIn(max = 300.dp)
                         )
                     }
                 }
             }
         } else {
-            Row(
-                horizontalArrangement = Arrangement.End,
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
                 if (messageData.imageUri != null) {
                     val uri = messageData.imageUri
                     val bitmap = uri?.let {
@@ -227,10 +218,10 @@ fun MessageView(messageData: MessageData, activity: Activity?) {
                             modifier = Modifier
                                 .wrapContentWidth()
                                 .background(
-                                    color = MaterialTheme.colorScheme.secondaryContainer,
-                                    shape = RoundedCornerShape(5.dp)
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    shape = RoundedCornerShape(18.dp)
                                 )
-                                .padding(5.dp)
+                                .padding(6.dp)
                                 .widthIn(max = 300.dp)
                         )
                     }
@@ -247,13 +238,12 @@ fun MessageView(messageData: MessageData, activity: Activity?) {
                             .wrapContentWidth()
                             .background(
                                 color = MaterialTheme.colorScheme.primaryContainer,
-                                shape = RoundedCornerShape(5.dp)
+                                shape = RoundedCornerShape(18.dp)
                             )
-                            .padding(5.dp)
+                            .padding(10.dp)
                             .widthIn(max = 300.dp)
                     )
                 }
-
             }
         }
     }
@@ -263,30 +253,26 @@ fun MessageView(messageData: MessageData, activity: Activity?) {
 @Composable
 fun SendMessageView(chatState: AppViewModel.ChatState, activity: Activity) {
     val localFocusManager = LocalFocusManager.current
-    val localActivity : MainActivity = activity as MainActivity
+    val localActivity: MainActivity = activity as? MainActivity ?: return
     Row(
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .height(IntrinsicSize.Max)
             .fillMaxWidth()
-            .padding(bottom = 5.dp)
+            .padding(bottom = 8.dp)
     ) {
         var text by rememberSaveable { mutableStateOf("") }
         OutlinedTextField(
             value = text,
             onValueChange = { text = it },
-            label = { Text(text = "Input") },
-            modifier = Modifier
-                .weight(9f),
+            label = { Text("Message") },
+            singleLine = true,
+            modifier = Modifier.weight(1f)
         )
         IconButton(
-            onClick = {
-                activity.takePhoto()
-            },
-            modifier = Modifier
-                .aspectRatio(1f)
-                .weight(1f),
+            onClick = { activity.takePhoto() },
+            modifier = Modifier.aspectRatio(1f),
             enabled = (chatState.chatable() && !localActivity.hasImage)
         ) {
             Icon(
@@ -295,12 +281,8 @@ fun SendMessageView(chatState: AppViewModel.ChatState, activity: Activity) {
             )
         }
         IconButton(
-            onClick = {
-                activity.pickImageFromGallery()
-            },
-            modifier = Modifier
-                .aspectRatio(1f)
-                .weight(1f),
+            onClick = { activity.pickImageFromGallery() },
+            modifier = Modifier.aspectRatio(1f),
             enabled = (chatState.chatable() && !localActivity.hasImage)
         ) {
             Icon(
@@ -310,14 +292,14 @@ fun SendMessageView(chatState: AppViewModel.ChatState, activity: Activity) {
         }
         IconButton(
             onClick = {
+                val trimmed = text.trim()
+                if (trimmed.isEmpty()) return@IconButton
                 localFocusManager.clearFocus()
-                chatState.requestGenerate(text, activity)
+                chatState.requestGenerate(trimmed, activity)
                 text = ""
             },
-            modifier = Modifier
-                .aspectRatio(1f)
-                .weight(1f),
-            enabled = (text != "" && chatState.chatable())
+            modifier = Modifier.aspectRatio(1f),
+            enabled = (text.isNotBlank() && chatState.chatable())
         ) {
             Icon(
                 imageVector = Icons.Filled.Send,
@@ -333,7 +315,7 @@ fun MessageViewPreviewWithMarkdown() {
     MessageView(
         messageData = MessageData(
             role = MessageRole.Assistant, text = """
-# Sample  Header
+# Sample Header
 * Markdown
 * [Link](https://example.com)
 <a href="https://www.google.com/">Google</a>
