@@ -1,13 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
-    package="ai.mlc.mlcchat">
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32"
+        android:maxSdkVersion="28"
         tools:ignore="ScopedStorage" />
 
     <application
@@ -19,11 +18,10 @@
         android:roundIcon="@drawable/mlc_logo_108"
         android:supportsRtl="true"
         android:theme="@style/Theme.MLCChat"
-        tools:targetApi="31">
+        tools:targetApi="35">
         <uses-native-library
             android:name="libOpenCL.so"
-            android:required="false"/>
-
+            android:required="false" />
         <uses-native-library
             android:name="libOpenCL-pixel.so"
             android:required="false" />
@@ -31,7 +29,8 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@android:style/Theme.Material.NoActionBar">
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.MLCChat">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

@@ -31,138 +31,70 @@ class MainActivity : ComponentActivity() {
         uri?.let {
             Log.v("pickImageLauncher", "Selected image uri: $it")
             if (!this::chatState.isInitialized) return@let
-            chatState.messages.add(
-                MessageData(
-                    role = MessageRole.User,
-                    text = "",
-                    id = UUID.randomUUID(),
-                    imageUri = it
-                )
-            )
+            chatState.messages.add(MessageData(MessageRole.User, "", UUID.randomUUID(), it))
         }
     }
 
     private var cameraImageUri: Uri? = null
     private val takePictureLauncher = registerForActivityResult(
         ActivityResultContracts.TakePicture()
-    ) { success: Boolean ->
-        if (success && cameraImageUri != null) {
-            Log.v("takePictureLauncher", "Camera image uri: $cameraImageUri")
-            if (!this::chatState.isInitialized) return@registerForActivityResult
-            chatState.messages.add(
-                MessageData(
-                    role = MessageRole.User,
-                    text = "",
-                    id = UUID.randomUUID(),
-                    imageUri = cameraImageUri
-                )
-            )
+    ) { success ->
+        val uri = cameraImageUri
+        if (success && uri != null && this::chatState.isInitialized) {
+            chatState.messages.add(MessageData(MessageRole.User, "", UUID.randomUUID(), uri))
+        } else if (!success && uri != null) {
+            contentResolver.delete(uri, null, null)
         }
     }
 
     private val requestPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
-            permissions.entries.forEach {
-                Log.d("Permissions", "${it.key} = ${it.value}")
-            }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) launchCamera()
+            else Log.w("MainActivity", "Camera permission was denied")
         }
 
     lateinit var chatState: AppViewModel.ChatState
 
-    @ExperimentalMaterial3Api
+    @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        chatState = AppViewModel(this.application).ChatState()
-        requestNeededPermissions()
-
+        chatState = AppViewModel(application).ChatState()
         setContent {
             Surface(modifier = Modifier.fillMaxSize()) {
-                MLCChatTheme {
-                    NavView(this)
-                }
+                MLCChatTheme { NavView(this) }
             }
-        }
-    }
-
-    private fun requestNeededPermissions() {
-        val permissionsToRequest = mutableListOf<String>()
-
-        val needsReadImagesPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED
-        if (needsReadImagesPermission) {
-            permissionsToRequest.add(Manifest.permission.READ_MEDIA_IMAGES)
-        }
-
-        val needsCameraPermission = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
-        if (needsCameraPermission) {
-            permissionsToRequest.add(Manifest.permission.CAMERA)
-        }
-
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            val needsLegacyReadStorage = ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.READ_EXTERNAL_STORAGE
-            ) != PackageManager.PERMISSION_GRANTED
-            if (needsLegacyReadStorage) {
-                permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-            }
-
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
-                ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            }
-        }
-
-        if (permissionsToRequest.isNotEmpty()) {
-            requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
         }
     }
 
     fun pickImageFromGallery() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestNeededPermissions()
-            return
-        }
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestNeededPermissions()
-            return
-        }
+        // GetContent grants temporary read access to the selected Uri; no storage
+        // permission is needed, including on Android 14's selected-photo flow.
         pickImageLauncher.launch("image/*")
     }
 
     fun takePhoto() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            requestNeededPermissions()
+            requestPermissionLauncher.launch(Manifest.permission.CAMERA)
             return
         }
+        launchCamera()
+    }
 
-        val contentValues = ContentValues().apply {
-            val timeFormatter = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
-            val fileName = "IMG_${timeFormatter.format(Date())}.jpg"
-            put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+    private fun launchCamera() {
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, "IMG_$timestamp.jpg")
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-            put(MediaStore.Images.Media.DATE_ADDED, System.currentTimeMillis() / 1000)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/MLCChat")
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
         }
-
-        cameraImageUri = contentResolver.insert(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            contentValues
-        )
-
-        if (cameraImageUri == null) {
-            Log.e("takePhoto", "Could not create image output Uri")
+        cameraImageUri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+        val uri = cameraImageUri ?: run {
+            Log.e("MainActivity", "Could not create image output Uri")
             return
         }
-
-        takePictureLauncher.launch(cameraImageUri)
+        takePictureLauncher.launch(uri)
     }
 }
