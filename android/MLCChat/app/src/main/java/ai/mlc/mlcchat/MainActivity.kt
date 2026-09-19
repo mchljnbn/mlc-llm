@@ -23,30 +23,34 @@ import java.util.Locale
 import java.util.UUID
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        private const val CAMERA_URI_KEY = "camera_image_uri"
+    }
+
     var hasImage = false
+    lateinit var chatState: AppViewModel.ChatState
+    private var cameraImageUri: Uri? = null
+    private var cameraLaunchInProgress = false
 
     private val pickImageLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri == null || !this::chatState.isInitialized) return@registerForActivityResult
-        try {
-            contentResolver.takePersistableUriPermission(uri, 0)
-        } catch (_: SecurityException) {
-            // GetContent grants temporary access; some providers do not support persistence.
-        }
         chatState.messages.add(MessageData(MessageRole.User, "", UUID.randomUUID(), uri))
     }
 
-    private var cameraImageUri: Uri? = null
     private val takePictureLauncher = registerForActivityResult(
         ActivityResultContracts.TakePicture()
     ) { success ->
         val uri = cameraImageUri
+        cameraLaunchInProgress = false
         if (success && uri != null && this::chatState.isInitialized) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 contentResolver.update(
                     uri,
-                    ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) },
+                    ContentValues().apply {
+                        put(MediaStore.Images.Media.IS_PENDING, 0)
+                    },
                     null,
                     null
                 )
@@ -64,11 +68,10 @@ class MainActivity : ComponentActivity() {
             else Log.w("MainActivity", "Camera permission was denied")
         }
 
-    lateinit var chatState: AppViewModel.ChatState
-
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        cameraImageUri = savedInstanceState?.getString(CAMERA_URI_KEY)?.let(Uri::parse)
         chatState = AppViewModel(application).ChatState()
         setContent {
             Surface(modifier = Modifier.fillMaxSize()) {
@@ -77,11 +80,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        cameraImageUri?.toString()?.let { outState.putString(CAMERA_URI_KEY, it) }
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onDestroy() {
+        if (isFinishing && cameraLaunchInProgress) {
+            cameraImageUri?.let { contentResolver.delete(it, null, null) }
+            cameraImageUri = null
+        }
+        super.onDestroy()
+    }
+
     fun pickImageFromGallery() {
         pickImageLauncher.launch("image/*")
     }
 
     fun takePhoto() {
+        if (cameraLaunchInProgress) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
             return
@@ -90,6 +107,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun launchCamera() {
+        if (cameraLaunchInProgress) return
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "IMG_$timestamp.jpg")
@@ -105,6 +123,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         cameraImageUri = uri
+        cameraLaunchInProgress = true
         takePictureLauncher.launch(uri)
     }
 }
