@@ -91,11 +91,7 @@ fun ChatView(navController: NavController, chatState: AppViewModel.ChatState, ac
         Column(Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 14.dp)) {
             Text(chatState.report.value, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().wrapContentHeight().padding(top = 8.dp))
             Divider(thickness = 1.dp, modifier = Modifier.padding(vertical = 6.dp))
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom),
-                state = listState
-            ) {
+            LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom), state = listState) {
                 items(chatState.messages, key = { it.id }) { message -> MessageView(message, mainActivity) }
             }
             Divider(thickness = 1.dp, modifier = Modifier.padding(top = 6.dp))
@@ -127,14 +123,20 @@ fun MessageView(messageData: MessageData, activity: Activity?) {
             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
                 val uri = messageData.imageUri
                 if (uri != null) {
-                    val bitmap = runCatching {
-                        mainActivity.contentResolver.openInputStream(uri)?.use(BitmapFactory::decodeStream)
-                    }.getOrNull()
-                    val displayBitmap = bitmap?.let { Bitmap.createScaledBitmap(it, 224, 224, true) }
+                    val bitmap = remember(uri) {
+                        runCatching {
+                            mainActivity.contentResolver.openInputStream(uri)?.use(BitmapFactory::decodeStream)
+                        }.getOrNull()
+                    }
+                    val displayBitmap = remember(bitmap) {
+                        bitmap?.let { Bitmap.createScaledBitmap(it, 224, 224, true) }
+                    }
                     if (displayBitmap != null) Image(displayBitmap.asImageBitmap(), "Selected image", modifier = Modifier.background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(18.dp)).padding(6.dp).widthIn(max = 300.dp))
-                    if (!mainActivity.hasImage) {
-                        mainActivity.chatState.requestImageBitmap(uri)
-                        mainActivity.hasImage = true
+                    LaunchedEffect(uri) {
+                        if (!mainActivity.hasImage) {
+                            mainActivity.chatState.requestImageBitmap(uri)
+                            mainActivity.hasImage = true
+                        }
                     }
                 } else Text(messageData.text, textAlign = TextAlign.Right, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.wrapContentWidth().background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(18.dp)).padding(10.dp).widthIn(max = 320.dp))
             }
