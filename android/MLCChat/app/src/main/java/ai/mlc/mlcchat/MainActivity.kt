@@ -28,11 +28,13 @@ class MainActivity : ComponentActivity() {
     private val pickImageLauncher = registerForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let {
-            Log.v("pickImageLauncher", "Selected image uri: $it")
-            if (!this::chatState.isInitialized) return@let
-            chatState.messages.add(MessageData(MessageRole.User, "", UUID.randomUUID(), it))
+        if (uri == null || !this::chatState.isInitialized) return@registerForActivityResult
+        try {
+            contentResolver.takePersistableUriPermission(uri, 0)
+        } catch (_: SecurityException) {
+            // GetContent grants temporary access; some providers do not support persistence.
         }
+        chatState.messages.add(MessageData(MessageRole.User, "", UUID.randomUUID(), uri))
     }
 
     private var cameraImageUri: Uri? = null
@@ -41,13 +43,22 @@ class MainActivity : ComponentActivity() {
     ) { success ->
         val uri = cameraImageUri
         if (success && uri != null && this::chatState.isInitialized) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                contentResolver.update(
+                    uri,
+                    ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) },
+                    null,
+                    null
+                )
+            }
             chatState.messages.add(MessageData(MessageRole.User, "", UUID.randomUUID(), uri))
-        } else if (!success && uri != null) {
+        } else if (uri != null) {
             contentResolver.delete(uri, null, null)
         }
+        cameraImageUri = null
     }
 
-    private val requestPermissionLauncher =
+    private val requestCameraPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) launchCamera()
             else Log.w("MainActivity", "Camera permission was denied")
@@ -67,14 +78,12 @@ class MainActivity : ComponentActivity() {
     }
 
     fun pickImageFromGallery() {
-        // GetContent grants temporary read access to the selected Uri; no storage
-        // permission is needed, including on Android 14's selected-photo flow.
         pickImageLauncher.launch("image/*")
     }
 
     fun takePhoto() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissionLauncher.launch(Manifest.permission.CAMERA)
+            requestCameraPermissionLauncher.launch(Manifest.permission.CAMERA)
             return
         }
         launchCamera()
@@ -90,11 +99,12 @@ class MainActivity : ComponentActivity() {
                 put(MediaStore.Images.Media.IS_PENDING, 1)
             }
         }
-        cameraImageUri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-        val uri = cameraImageUri ?: run {
+        val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+        if (uri == null) {
             Log.e("MainActivity", "Could not create image output Uri")
             return
         }
+        cameraImageUri = uri
         takePictureLauncher.launch(uri)
     }
 }

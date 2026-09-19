@@ -41,10 +41,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,193 +57,86 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import dev.jeziellago.compose.markdowntext.MarkdownText
-import kotlinx.coroutines.launch
 
 @ExperimentalMaterial3Api
 @Composable
-fun ChatView(
-    navController: NavController, chatState: AppViewModel.ChatState, activity: Activity
-) {
+fun ChatView(navController: NavController, chatState: AppViewModel.ChatState, activity: Activity) {
     val localFocusManager = LocalFocusManager.current
-    (activity as MainActivity).chatState = chatState
+    val mainActivity = activity as? MainActivity ?: return
+    mainActivity.chatState = chatState
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        text = "MLCChat: " + chatState.modelName.value.split("-")[0],
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                },
+                title = { Text("MLCChat: " + chatState.modelName.value.substringBefore("-"), color = MaterialTheme.colorScheme.onPrimary) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary),
                 navigationIcon = {
-                    IconButton(
-                        onClick = { navController.popBackStack() },
-                        enabled = chatState.interruptable()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.ArrowBack,
-                            contentDescription = "back home page",
-                            tint = MaterialTheme.colorScheme.onPrimary
-                        )
+                    IconButton(onClick = { navController.popBackStack() }, enabled = chatState.interruptable()) {
+                        Icon(Icons.Filled.ArrowBack, "Back", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = {
-                            chatState.requestResetChat(); activity.hasImage = false
-                        },
-                        enabled = chatState.interruptable()
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Replay,
-                            contentDescription = "reset the chat",
-                            tint = MaterialTheme.colorScheme.onPrimary
-                        )
+                    IconButton(onClick = { chatState.requestResetChat(); mainActivity.hasImage = false }, enabled = chatState.interruptable()) {
+                        Icon(Icons.Filled.Replay, "Reset", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 }
             )
         },
-        modifier = Modifier.pointerInput(Unit) {
-            detectTapGestures(onTap = { localFocusManager.clearFocus() })
-        }
+        modifier = Modifier.pointerInput(Unit) { detectTapGestures { localFocusManager.clearFocus() } }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 14.dp)
-        ) {
-            val lazyColumnListState = rememberLazyListState()
-            val coroutineScope = rememberCoroutineScope()
-            Text(
-                text = chatState.report.value,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .wrapContentHeight()
-                    .padding(top = 8.dp)
-            )
+        val listState = rememberLazyListState()
+        LaunchedEffect(chatState.messages.size) {
+            if (chatState.messages.isNotEmpty()) listState.animateScrollToItem(chatState.messages.lastIndex)
+        }
+        Column(Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 14.dp)) {
+            Text(chatState.report.value, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().wrapContentHeight().padding(top = 8.dp))
             Divider(thickness = 1.dp, modifier = Modifier.padding(vertical = 6.dp))
             LazyColumn(
-                modifier = Modifier.weight(9f),
-                verticalArrangement = Arrangement.spacedBy(8.dp, alignment = Alignment.Bottom),
-                state = lazyColumnListState
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Bottom),
+                state = listState
             ) {
-                coroutineScope.launch {
-                    if (chatState.messages.isNotEmpty()) {
-                        lazyColumnListState.animateScrollToItem(chatState.messages.size)
-                    }
-                }
-                items(
-                    items = chatState.messages,
-                    key = { message -> message.id },
-                ) { message ->
-                    MessageView(messageData = message, activity)
-                }
-                item { }
+                items(chatState.messages, key = { it.id }) { message -> MessageView(message, mainActivity) }
             }
             Divider(thickness = 1.dp, modifier = Modifier.padding(top = 6.dp))
-            SendMessageView(chatState = chatState, activity)
+            SendMessageView(chatState, mainActivity)
         }
     }
 }
 
 @Composable
 fun MessageView(messageData: MessageData, activity: Activity?) {
+    val mainActivity = activity as? MainActivity ?: return
     var useMarkdown by remember { mutableStateOf(true) }
-    val localActivity: MainActivity = activity as? MainActivity ?: return
     SelectionContainer {
         if (messageData.role == MessageRole.Assistant) {
             Column {
-                if (messageData.text.isNotEmpty()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Show as Markdown",
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier
-                                .wrapContentWidth()
-                                .padding(end = 8.dp)
-                                .widthIn(max = 300.dp)
-                        )
-                        Switch(checked = useMarkdown, onCheckedChange = { useMarkdown = it })
-                    }
+                if (messageData.text.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Show as Markdown", color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.padding(end = 8.dp))
+                    Switch(checked = useMarkdown, onCheckedChange = { useMarkdown = it })
                 }
-                Row(horizontalArrangement = Arrangement.Start, modifier = Modifier.fillMaxWidth()) {
-                    if (useMarkdown) {
-                        MarkdownText(
-                            isTextSelectable = true,
-                            modifier = Modifier
-                                .wrapContentWidth()
-                                .background(
-                                    color = MaterialTheme.colorScheme.secondaryContainer,
-                                    shape = RoundedCornerShape(18.dp)
-                                )
-                                .padding(10.dp)
-                                .widthIn(max = 300.dp),
-                            markdown = messageData.text,
-                        )
-                    } else {
-                        Text(
-                            text = messageData.text,
-                            textAlign = TextAlign.Left,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier
-                                .wrapContentWidth()
-                                .background(
-                                    color = MaterialTheme.colorScheme.secondaryContainer,
-                                    shape = RoundedCornerShape(18.dp)
-                                )
-                                .padding(10.dp)
-                                .widthIn(max = 300.dp)
-                        )
-                    }
+                Row(Modifier.fillMaxWidth()) {
+                    if (useMarkdown) MarkdownText(
+                        isTextSelectable = true,
+                        modifier = Modifier.wrapContentWidth().background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(18.dp)).padding(10.dp).widthIn(max = 320.dp),
+                        markdown = messageData.text
+                    ) else Text(messageData.text, color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.wrapContentWidth().background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(18.dp)).padding(10.dp).widthIn(max = 320.dp))
                 }
             }
         } else {
             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-                if (messageData.imageUri != null) {
-                    val uri = messageData.imageUri
-                    val bitmap = uri?.let {
-                        activity.contentResolver.openInputStream(it)?.use { input ->
-                            BitmapFactory.decodeStream(input)
-                        }
-                    }
+                val uri = messageData.imageUri
+                if (uri != null) {
+                    val bitmap = runCatching {
+                        mainActivity.contentResolver.openInputStream(uri)?.use(BitmapFactory::decodeStream)
+                    }.getOrNull()
                     val displayBitmap = bitmap?.let { Bitmap.createScaledBitmap(it, 224, 224, true) }
-                    if (displayBitmap != null) {
-                        Image(
-                            displayBitmap.asImageBitmap(),
-                            "",
-                            modifier = Modifier
-                                .wrapContentWidth()
-                                .background(
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    shape = RoundedCornerShape(18.dp)
-                                )
-                                .padding(6.dp)
-                                .widthIn(max = 300.dp)
-                        )
+                    if (displayBitmap != null) Image(displayBitmap.asImageBitmap(), "Selected image", modifier = Modifier.background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(18.dp)).padding(6.dp).widthIn(max = 300.dp))
+                    if (!mainActivity.hasImage) {
+                        mainActivity.chatState.requestImageBitmap(uri)
+                        mainActivity.hasImage = true
                     }
-                    if (!localActivity.hasImage) {
-                        localActivity.chatState.requestImageBitmap(messageData.imageUri)
-                    }
-                    localActivity.hasImage = true
-                } else {
-                    Text(
-                        text = messageData.text,
-                        textAlign = TextAlign.Right,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier
-                            .wrapContentWidth()
-                            .background(
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                shape = RoundedCornerShape(18.dp)
-                            )
-                            .padding(10.dp)
-                            .widthIn(max = 300.dp)
-                    )
-                }
+                } else Text(messageData.text, textAlign = TextAlign.Right, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.wrapContentWidth().background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(18.dp)).padding(10.dp).widthIn(max = 320.dp))
             }
         }
     }
@@ -253,73 +146,21 @@ fun MessageView(messageData: MessageData, activity: Activity?) {
 @Composable
 fun SendMessageView(chatState: AppViewModel.ChatState, activity: Activity) {
     val localFocusManager = LocalFocusManager.current
-    val localActivity: MainActivity = activity as? MainActivity ?: return
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .height(IntrinsicSize.Max)
-            .fillMaxWidth()
-            .padding(bottom = 8.dp)
-    ) {
-        var text by rememberSaveable { mutableStateOf("") }
-        OutlinedTextField(
-            value = text,
-            onValueChange = { text = it },
-            label = { Text("Message") },
-            singleLine = true,
-            modifier = Modifier.weight(1f)
-        )
-        IconButton(
-            onClick = { activity.takePhoto() },
-            modifier = Modifier.aspectRatio(1f),
-            enabled = (chatState.chatable() && !localActivity.hasImage)
-        ) {
-            Icon(
-                imageVector = Icons.Filled.AddAPhoto,
-                contentDescription = "use camera",
-            )
-        }
-        IconButton(
-            onClick = { activity.pickImageFromGallery() },
-            modifier = Modifier.aspectRatio(1f),
-            enabled = (chatState.chatable() && !localActivity.hasImage)
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Photo,
-                contentDescription = "select image",
-            )
-        }
-        IconButton(
-            onClick = {
-                val trimmed = text.trim()
-                if (trimmed.isEmpty()) return@IconButton
-                localFocusManager.clearFocus()
-                chatState.requestGenerate(trimmed, activity)
-                text = ""
-            },
-            modifier = Modifier.aspectRatio(1f),
-            enabled = (text.isNotBlank() && chatState.chatable())
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Send,
-                contentDescription = "send message",
-            )
-        }
+    val mainActivity = activity as? MainActivity ?: return
+    var text by rememberSaveable { mutableStateOf("") }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(IntrinsicSize.Max).fillMaxWidth().padding(bottom = 8.dp)) {
+        OutlinedTextField(value = text, onValueChange = { text = it }, label = { Text("Message") }, singleLine = true, modifier = Modifier.weight(1f))
+        IconButton(onClick = mainActivity::takePhoto, enabled = chatState.chatable() && !mainActivity.hasImage) { Icon(Icons.Filled.AddAPhoto, "Use camera") }
+        IconButton(onClick = mainActivity::pickImageFromGallery, enabled = chatState.chatable() && !mainActivity.hasImage) { Icon(Icons.Filled.Photo, "Select image") }
+        IconButton(onClick = {
+            val prompt = text.trim()
+            if (prompt.isNotEmpty()) { localFocusManager.clearFocus(); chatState.requestGenerate(prompt, mainActivity); text = "" }
+        }, enabled = text.isNotBlank() && chatState.chatable()) { Icon(Icons.Filled.Send, "Send message") }
     }
 }
 
 @Preview
 @Composable
 fun MessageViewPreviewWithMarkdown() {
-    MessageView(
-        messageData = MessageData(
-            role = MessageRole.Assistant, text = """
-# Sample Header
-* Markdown
-* [Link](https://example.com)
-<a href="https://www.google.com/">Google</a>
-"""
-        ), null
-    )
+    MessageView(MessageData(MessageRole.Assistant, "# Sample Header\n* Markdown"), null)
 }
